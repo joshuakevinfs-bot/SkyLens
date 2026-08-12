@@ -1,0 +1,238 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard SFA Lapangan</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#f6f5f1; --ink:#1c2321; --muted:#5b655f; --border:#e2dfd6;
+    --green:#2f6b4f; --navy:#1F3864; --amber:#d4a900; --red:#a53838; --card:#fff;
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:var(--bg); font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif; color:var(--ink);}
+  .wrap{max-width:1180px; margin:0 auto; padding:22px 20px 60px;}
+  h1{font-size:20px; margin:0 0 3px;}
+  .lead{font-size:12.5px; color:var(--muted); margin-bottom:22px;}
+  .grid{display:grid; grid-template-columns:1fr 1fr; gap:16px;}
+  @media(max-width:900px){ .grid{grid-template-columns:1fr;} }
+  .stats{display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:20px;}
+  @media(max-width:700px){ .stats{grid-template-columns:repeat(2,1fr);} }
+  .stat{background:var(--card); border:1px solid var(--border); border-radius:12px; padding:14px 16px;}
+  .stat .n{font-size:22px; font-weight:700; color:var(--navy);}
+  .stat .l{font-size:11px; color:var(--muted); margin-top:2px;}
+  .panel{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:18px; margin-bottom:16px;}
+  .panel h2{font-size:14px; margin:0 0 12px;}
+  .row{display:flex; gap:8px; margin-bottom:10px; flex-wrap:wrap;}
+  select, input{border:1px solid var(--border); border-radius:8px; padding:8px 10px; font-size:12.5px; flex:1; min-width:140px;}
+  button.act{background:var(--navy); color:#fff; border:none; border-radius:8px; padding:8px 16px; font-size:12.5px; font-weight:600; cursor:pointer;}
+  table{width:100%; border-collapse:collapse; font-size:12px;}
+  th{text-align:left; color:var(--muted); font-weight:600; padding:7px 8px; border-bottom:1px solid var(--border); font-size:11px; text-transform:uppercase; letter-spacing:0.02em;}
+  td{padding:8px 8px; border-bottom:1px solid var(--border);}
+  .badge{display:inline-block; padding:2px 8px; border-radius:20px; font-size:10.5px; font-weight:600;}
+  .badge.ya{background:#e5f0e2; color:var(--green);}
+  .badge.tidak{background:#f2eae5; color:var(--red);}
+  .badge.belum{background:#eee; color:var(--muted);}
+  .thumb{width:38px; height:38px; border-radius:6px; object-fit:cover; cursor:pointer;}
+  #dashmap{height:340px; border-radius:10px; margin-top:10px;}
+  .empty{color:var(--muted); font-size:12px; padding:16px 0; text-align:center;}
+  .lightbox{position:fixed; inset:0; background:rgba(0,0,0,0.85); display:none; align-items:center; justify-content:center; z-index:3000; cursor:zoom-out;}
+  .lightbox img{max-width:90%; max-height:90%; border-radius:8px;}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Dashboard SFA Lapangan</h1>
+  <div class="lead">Assign zona ke sales + monitoring pergerakan &amp; temuan real-time. Klik "Muat ulang" buat refresh data terbaru.</div>
+
+  <div class="stats" id="statsRow"></div>
+
+  <div class="panel">
+    <h2>Assign zona ke sales</h2>
+    <div class="row">
+      <input type="text" id="inputKodeSales" placeholder="Kode salesman (contoh: TX2DA-RATNA SARI RANI)">
+      <select id="selectZona"><option value="">Memuat zona…</option></select>
+      <input type="text" id="inputAssignBy" placeholder="Ditugaskan oleh (nama kamu)">
+      <button class="act" onclick="assignZona()">Assign</button>
+    </div>
+    <table id="assignTable"><thead><tr><th>Sales</th><th>Zona</th><th>Kabupaten</th><th>Ditugaskan oleh</th><th>Tanggal</th><th></th></tr></thead><tbody></tbody></table>
+    <div class="empty" id="assignEmpty" style="display:none">Belum ada assign.</div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Progress sweep per zona</h2>
+      <table><thead><tr><th>Petak</th><th>Kecamatan</th><th>Skor</th><th>Sales aktif</th><th>Progress</th></tr></thead>
+        <tbody id="progressBody"></tbody>
+      </table>
+    </div>
+
+    <div class="panel">
+      <h2>Peta gabungan — semua zona pilot</h2>
+      <div id="dashmap"></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Feed temuan terbaru</h2>
+    <table><thead><tr><th>Foto</th><th>Sales</th><th>Petak</th><th>Grosir?</th><th>Jml toko baru</th><th>Catatan</th><th>Waktu</th></tr></thead>
+      <tbody id="temuanBody"></tbody>
+    </table>
+    <div class="empty" id="temuanEmpty" style="display:none">Belum ada temuan masuk.</div>
+  </div>
+
+  <button class="act" onclick="muatSemua()" style="margin-top:6px;">Muat ulang data</button>
+</div>
+
+<div class="lightbox" id="lightbox" onclick="this.style.display='none'"><img id="lightboxImg" src=""></div>
+
+<script>
+const SUPABASE_URL = 'https://ehptgczgoyiaznvefmmx.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVocHRnY3pnb3lpYXpudmVmbW14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0ODgwODQsImV4cCI6MjEwMjA2NDA4NH0.j0NTphKMY_ttS0hX0djchZrdi_t8ZJ1iPdcrTWpYyPU';
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const S = 0.01;
+
+let map, zonaCache = [];
+
+async function muatZonaDropdown(){
+  const { data, error } = await sb.from('zona_pilot').select('*').order('peluang_a', { ascending:false });
+  const sel = document.getElementById('selectZona');
+  if(error){ sel.innerHTML = '<option value="">Gagal memuat</option>'; return; }
+  zonaCache = data || [];
+  sel.innerHTML = zonaCache.map(z => `<option value="${z.key_petak}">${z.kecamatan} — ${z.key_petak} (${Math.round(z.peluang_a*100)}%)</option>`).join('');
+}
+
+async function assignZona(){
+  const kode = document.getElementById('inputKodeSales').value.trim();
+  const keyPetak = document.getElementById('selectZona').value;
+  const oleh = document.getElementById('inputAssignBy').value.trim();
+  if(!kode || !keyPetak){ alert('Isi kode sales dan pilih zona dulu'); return; }
+  const { error } = await sb.from('assign_pilot').insert({
+    kode_salesman: kode, key_petak: parseInt(keyPetak), ditugaskan_oleh: oleh || null
+  });
+  if(error){ alert('Gagal assign: ' + error.message); return; }
+  document.getElementById('inputKodeSales').value = '';
+  muatSemua();
+}
+
+async function batalkanAssign(id){
+  if(!confirm('Batalkan assign ini?')) return;
+  await sb.from('assign_pilot').update({ status:'dibatalkan' }).eq('id', id);
+  muatSemua();
+}
+
+async function muatAssignTable(){
+  const { data, error } = await sb.from('assign_pilot')
+    .select('*, zona_pilot(*)').eq('status','aktif').order('tanggal_assign', { ascending:false });
+  const tbody = document.querySelector('#assignTable tbody');
+  const empty = document.getElementById('assignEmpty');
+  if(error || !data || data.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  tbody.innerHTML = data.map(a => `
+    <tr>
+      <td>${a.kode_salesman}</td>
+      <td>${a.zona_pilot ? a.zona_pilot.kecamatan+' ('+a.key_petak+')' : a.key_petak}</td>
+      <td>${a.zona_pilot ? a.zona_pilot.kabupaten : '—'}</td>
+      <td>${a.ditugaskan_oleh || '—'}</td>
+      <td>${new Date(a.tanggal_assign).toLocaleDateString('id-ID')}</td>
+      <td><a href="#" onclick="batalkanAssign('${a.id}');return false;" style="color:var(--red); font-size:11px;">Batalkan</a></td>
+    </tr>`).join('');
+}
+
+async function muatProgress(){
+  const { data: assigns } = await sb.from('assign_pilot').select('key_petak, kode_salesman').eq('status','aktif');
+  const { data: progress } = await sb.from('grid_progress').select('key_petak, kode_salesman, cell_r, cell_c');
+
+  const byZona = {};
+  (assigns||[]).forEach(a=>{
+    byZona[a.key_petak] = byZona[a.key_petak] || new Set();
+    byZona[a.key_petak].add(a.kode_salesman);
+  });
+  const cellsByZona = {};
+  (progress||[]).forEach(p=>{
+    cellsByZona[p.key_petak] = cellsByZona[p.key_petak] || new Set();
+    cellsByZona[p.key_petak].add(p.cell_r+'_'+p.cell_c);
+  });
+
+  const tbody = document.getElementById('progressBody');
+  tbody.innerHTML = zonaCache.map(z=>{
+    const salesSet = byZona[z.key_petak] || new Set();
+    const cellCount = (cellsByZona[z.key_petak]||new Set()).size;
+    const pct = Math.round(cellCount/16*100);
+    return `<tr>
+      <td>${z.key_petak}</td><td>${z.kecamatan}</td><td>${Math.round(z.peluang_a*100)}%</td>
+      <td>${salesSet.size ? [...salesSet].join(', ') : '—'}</td>
+      <td>${cellCount}/16 (${pct}%)</td>
+    </tr>`;
+  }).join('');
+}
+
+async function muatTemuan(){
+  const { data, error } = await sb.from('temuan_pilot').select('*').order('tanggal', { ascending:false }).limit(50);
+  const tbody = document.getElementById('temuanBody');
+  const empty = document.getElementById('temuanEmpty');
+  if(error || !data || data.length===0){ tbody.innerHTML=''; empty.style.display='block'; return; }
+  empty.style.display='none';
+  tbody.innerHTML = data.map(t=>{
+    const badgeClass = t.ditemukan_grosir==='ya' ? 'ya' : (t.ditemukan_grosir==='tidak' ? 'tidak' : 'belum');
+    return `<tr>
+      <td><img class="thumb" src="${t.foto_url}" onclick="bukaFoto('${t.foto_url}')"></td>
+      <td>${t.kode_salesman}</td>
+      <td>${t.key_petak}</td>
+      <td><span class="badge ${badgeClass}">${t.ditemukan_grosir}</span></td>
+      <td>${t.jumlah_toko_baru}</td>
+      <td>${t.catatan || '—'}</td>
+      <td>${new Date(t.tanggal).toLocaleString('id-ID')}</td>
+    </tr>`;
+  }).join('');
+}
+function bukaFoto(url){
+  document.getElementById('lightboxImg').src = url;
+  document.getElementById('lightbox').style.display = 'flex';
+}
+
+async function muatStats(){
+  const [{count:cAssign}, {count:cTemuan}, {data:grosirYa}, {data:grid}] = await Promise.all([
+    sb.from('assign_pilot').select('*', { count:'exact', head:true }).eq('status','aktif'),
+    sb.from('temuan_pilot').select('*', { count:'exact', head:true }),
+    sb.from('temuan_pilot').select('id').eq('ditemukan_grosir','ya'),
+    sb.from('grid_progress').select('key_petak, cell_r, cell_c')
+  ]);
+  const uniqCells = new Set((grid||[]).map(g=>g.key_petak+'_'+g.cell_r+'_'+g.cell_c)).size;
+  const totalCells = zonaCache.length * 16;
+  const pctSisir = totalCells ? Math.round(uniqCells/totalCells*100) : 0;
+
+  document.getElementById('statsRow').innerHTML = `
+    <div class="stat"><div class="n">${cAssign ?? 0}</div><div class="l">Zona aktif di-assign</div></div>
+    <div class="stat"><div class="n">${cTemuan ?? 0}</div><div class="l">Total temuan masuk</div></div>
+    <div class="stat"><div class="n">${(grosirYa||[]).length}</div><div class="l">Konfirmasi grosir ditemukan</div></div>
+    <div class="stat"><div class="n">${pctSisir}%</div><div class="l">Rata-rata area tersisir</div></div>`;
+}
+
+function muatPetaGabungan(){
+  if(map){ map.remove(); }
+  if(zonaCache.length===0) return;
+  const avgLat = zonaCache.reduce((s,z)=>s+z.lat_c,0)/zonaCache.length;
+  const avgLon = zonaCache.reduce((s,z)=>s+z.lon_c,0)/zonaCache.length;
+  map = L.map('dashmap').setView([avgLat, avgLon], 10);
+  L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom:19 }).addTo(map);
+  zonaCache.forEach(z=>{
+    const lon0=z.gx*S, lat0=z.gy*S;
+    L.rectangle([[lat0,lon0],[lat0+S,lon0+S]], { color:'#d4a900', weight:2, fillColor:'#fff3c4', fillOpacity:0.4 })
+      .bindPopup(`<b>${z.kecamatan}</b><br>Petak ${z.key_petak}<br>Skor ${Math.round(z.peluang_a*100)}%`)
+      .addTo(map);
+  });
+}
+
+async function muatSemua(){
+  await muatZonaDropdown();
+  await Promise.all([muatAssignTable(), muatProgress(), muatTemuan(), muatStats()]);
+  muatPetaGabungan();
+}
+muatSemua();
+</script>
+</body>
+</html>
