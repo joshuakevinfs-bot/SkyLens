@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=0">
+<title>SFA Lapangan — Sales</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+  :root{
+    --bg:#fbfaf6; --map-bg:#eef0e9; --ink:#1c2321; --muted:#5b655f;
+    --border:#e4e1d8; --green:#2f6b4f; --navy:#2a5a7a; --amber:#fff3c4; --amber-line:#d4a900; --red:#a53838;
+    --shadow:0 2px 10px rgba(28,35,33,0.12);
+  }
+  *{box-sizing:border-box;}
+  body{margin:0; background:#d9d6ca; font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;}
+  .phone{max-width:400px; margin:0 auto; min-height:100vh; background:var(--bg); display:flex; flex-direction:column;}
+
+  /* ---------- layar login/pilih sales ---------- */
+  .gate{padding:40px 22px; text-align:center;}
+  .gate h1{font-size:18px; color:var(--ink); margin-bottom:4px;}
+  .gate p{font-size:12.5px; color:var(--muted); margin-bottom:24px;}
+  .gate input{width:100%; border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-size:14px; margin-bottom:10px;}
+  .gate button{width:100%; background:var(--ink); color:#fff; border:none; border-radius:10px; padding:13px; font-size:14px; font-weight:600;}
+
+  /* ---------- layar pilih zona ---------- */
+  .zonelist{padding:14px 16px; flex:1;}
+  .zonelist h2{font-size:15px; color:var(--ink); margin:0 0 3px;}
+  .zonelist .sub{font-size:11.5px; color:var(--muted); margin-bottom:14px;}
+  .zonecard{
+    border:1px solid var(--border); border-radius:12px; padding:12px 14px; margin-bottom:10px;
+    background:#fff; cursor:pointer;
+  }
+  .zonecard .top{display:flex; justify-content:space-between; align-items:center;}
+  .zonecard .name{font-size:13.5px; font-weight:600; color:var(--ink);}
+  .zonecard .score{font-size:11px; color:var(--green); font-weight:700;}
+  .zonecard .meta{font-size:11px; color:var(--muted); margin-top:3px;}
+  .zonecard .bar{height:5px; border-radius:3px; background:var(--border); margin-top:8px; overflow:hidden;}
+  .zonecard .bar div{height:100%; background:var(--green);}
+  .empty{padding:30px 16px; text-align:center; color:var(--muted); font-size:12.5px;}
+
+  /* ---------- layar peta (sama kayak prototipe) ---------- */
+  .topbar{padding:12px 16px 9px; border-bottom:0.5px solid var(--border); background:var(--bg); display:flex; align-items:center; gap:10px;}
+  .backbtn{border:none; background:var(--map-bg); border-radius:8px; width:32px; height:32px; font-size:16px; cursor:pointer; flex-shrink:0;}
+  .topbar h1{margin:0; font-size:14px; font-weight:600; color:var(--ink);}
+  .topbar .sub{font-size:11px; color:var(--muted);}
+
+  .mapwrap{position:relative; flex:1; min-height:440px; background:var(--map-bg);}
+  #map{position:absolute; inset:0;}
+  .card{position:absolute; left:10px; right:10px; top:10px; background:#fff; border-radius:12px; padding:11px 13px; box-shadow:var(--shadow); z-index:900; display:flex; align-items:center; gap:11px;}
+  .arrowbox{width:40px; height:40px; border-radius:50%; background:var(--map-bg); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; flex-shrink:0;}
+  .cardtext .big{font-size:15px; font-weight:600; color:var(--ink); margin:0;}
+  .cardtext .small{font-size:11px; color:var(--muted); margin:1px 0 0;}
+  .sweepcard{display:none;}
+  .sweepcard .head{display:flex; align-items:center; gap:6px; font-size:12.5px; font-weight:600; color:var(--ink); margin-bottom:7px;}
+  .progtrack{height:7px; border-radius:4px; background:var(--border); overflow:hidden;}
+  .progfill{height:100%; width:0%; background:var(--green); transition:width 0.35s ease;}
+  .proglabel{margin:6px 0 0; font-size:11px; color:var(--muted); text-align:right;}
+  .fab{position:absolute; right:14px; bottom:14px; width:52px; height:52px; border-radius:50%; background:var(--ink); color:#fff; border:none; display:none; align-items:center; justify-content:center; box-shadow:var(--shadow); z-index:900; font-size:26px; cursor:pointer;}
+
+  .modal-backdrop{position:fixed; inset:0; background:rgba(28,35,33,0.5); z-index:2000; display:none; align-items:flex-end; justify-content:center;}
+  .modal{width:100%; max-width:400px; background:#fff; border-radius:18px 18px 0 0; padding:18px 18px 22px;}
+  .modal h2{margin:0 0 3px; font-size:15px; color:var(--ink);}
+  .modal .sub{font-size:11.5px; color:var(--muted); margin-bottom:14px;}
+  .field{margin-bottom:12px;}
+  .field label{display:block; font-size:11.5px; font-weight:600; color:var(--ink); margin-bottom:5px;}
+  .radiorow{display:flex; gap:8px;}
+  .radiorow button{flex:1; padding:9px; border-radius:9px; border:1px solid var(--border); background:var(--map-bg); font-size:12px; color:var(--ink); cursor:pointer;}
+  .radiorow button.on{background:var(--green); color:#fff; border-color:var(--green);}
+  .field input[type=number], .field textarea{width:100%; border:1px solid var(--border); border-radius:9px; padding:9px 11px; font-size:13px; font-family:inherit; color:var(--ink);}
+  .field textarea{resize:vertical; min-height:56px;}
+  .photobtn{width:100%; border:1.5px dashed var(--border); border-radius:9px; padding:16px; text-align:center; font-size:12px; color:var(--muted); background:var(--map-bg); cursor:pointer;}
+  .photobtn.filled{border-color:var(--green); color:var(--green); font-weight:600;}
+  .modal-actions{display:flex; gap:8px; margin-top:16px;}
+  .btn{border:none; border-radius:9px; padding:11px 12px; font-size:13px; font-weight:600; cursor:pointer; flex:1;}
+  .btn-primary{background:var(--ink); color:#fff;}
+  .btn-ghost{background:var(--map-bg); color:var(--ink); border:1px solid var(--border);}
+  .btn:disabled{opacity:0.4; cursor:not-allowed;}
+  .toast{position:fixed; bottom:20px; left:50%; transform:translateX(-50%); background:var(--ink); color:#fff; padding:11px 18px; border-radius:10px; font-size:12.5px; z-index:3000; display:none; max-width:88%; text-align:center;}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     KONFIGURASI — ganti dua nilai ini setelah project Supabase jadi
+     ============================================================ -->
+<script>
+  const SUPABASE_URL = 'https://ehptgczgoyiaznvefmmx.supabase.co';
+  const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVocHRnY3pnb3lpYXpudmVmbW14Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODY0ODgwODQsImV4cCI6MjEwMjA2NDA4NH0.j0NTphKMY_ttS0hX0djchZrdi_t8ZJ1iPdcrTWpYyPU';
+  const S = 0.01;      // ukuran petak (derajat)
+  const GRID_N = 4;    // 4x4 = 16 kotak per petak
+  // Daftar sales [kode, nama] — sumber: RO_P3M Banjarmasin Selatan + Banjarbaru
+  const SALES_LIST = [[172048, "TX2DA-LIA"], [172043, "TX2DA-RIZQI"], [160201, "TX2DA-FAISAL HAJIME"], [160278, "TX2DA-M. ADITYA RAHMAN"], [160219, "TX2DA-MUHAMAD IRFAN"]];
+</script>
+
+<div class="phone" id="app">
+
+  <!-- LAYAR 1: pilih kode salesman -->
+  <div class="gate" id="gateScreen">
+    <h1>SFA Lapangan</h1>
+    <p>Pilih nama kamu buat lihat zona yang ditugaskan</p>
+    <select id="kodeInput" style="width:100%; border:1px solid var(--border); border-radius:10px; padding:12px 14px; font-size:14px; margin-bottom:10px; background:#fff;">
+      <option value="">— Pilih nama sales —</option>
+    </select>
+    <button onclick="masuk()">Masuk</button>
+  </div>
+
+  <!-- LAYAR 2: daftar zona assigned -->
+  <div class="zonelist" id="zoneScreen" style="display:none">
+    <h2>Zona kamu</h2>
+    <div class="sub" id="salesLabel"></div>
+    <div id="zoneListBody"></div>
+  </div>
+
+  <!-- LAYAR 3: peta navigasi + sweep -->
+  <div id="mapScreen" style="display:none; flex:1; display:flex; flex-direction:column;">
+    <div class="topbar">
+      <button class="backbtn" onclick="kembaliKeDaftar()">←</button>
+      <div>
+        <h1 id="zoneTitle">—</h1>
+        <div class="sub" id="zoneSub">—</div>
+      </div>
+    </div>
+    <div class="mapwrap">
+      <div id="map"></div>
+      <div class="card" id="navcard">
+        <div class="arrowbox"><svg id="arrowicon" width="20" height="20" viewBox="0 0 24 24"><path d="M12 2.5 L20.5 20.5 L12 16.2 L3.5 20.5 Z" fill="var(--red)" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg></div>
+        <div class="cardtext"><p class="big" id="disttext">Mencari lokasi…</p><p class="small">jarak ke pusat zona</p></div>
+      </div>
+      <div class="card sweepcard" id="sweepcard">
+        <div style="width:100%">
+          <div class="head"><span>✓</span><span>Kamu di dalam zona — sisir tiap kotak</span></div>
+          <div class="progtrack"><div class="progfill" id="progfill"></div></div>
+          <p class="proglabel" id="proglabel">0 / 16 kotak</p>
+        </div>
+      </div>
+      <button class="fab" id="fab" title="Catat temuan">+</button>
+      <button id="recenterBtn" title="Kembali ke posisi kamu" style="position:absolute; right:14px; bottom:76px; width:40px; height:40px; border-radius:50%; background:#fff; border:1px solid var(--border); box-shadow:var(--shadow); z-index:900; display:none; align-items:center; justify-content:center; font-size:17px; cursor:pointer;">◎</button>
+    </div>
+  </div>
+
+</div>
+
+<div class="modal-backdrop" id="modalBackdrop">
+  <div class="modal">
+    <h2>Catat temuan</h2>
+    <div class="sub" id="modalZoneLabel">—</div>
+    <div class="field">
+      <label>Ditemukan grosir / toko besar?</label>
+      <div class="radiorow">
+        <button type="button" class="opt" data-val="ya" onclick="pickFound(this)">Ya</button>
+        <button type="button" class="opt" data-val="tidak" onclick="pickFound(this)">Tidak</button>
+      </div>
+    </div>
+    <div class="field"><label>Jumlah toko baru dicatat</label><input type="number" id="jmlToko" min="0" value="0"></div>
+    <div class="field">
+      <label>Foto toko <span style="color:var(--red)">(wajib)</span></label>
+      <label class="photobtn" id="photobtn" for="fotoInput">Tap untuk buka kamera</label>
+      <input type="file" id="fotoInput" accept="image/*" capture="environment" style="display:none" onchange="onPhoto(this)">
+    </div>
+    <div class="field"><label>Catatan (opsional)</label><textarea id="catatan" placeholder="Contoh: toko di samping SPBU"></textarea></div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="closeModal()">Batal</button>
+      <button class="btn btn-primary" id="submitBtn" disabled onclick="submitTemuan()">Simpan temuan</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+let kodeSalesman = '';
+let namaSalesman = '';
+let zonaList = [];
+let zonaAktif = null;
+let map, youMarker, lastPos = null;
+let cells = [];
+let LAT0, LAT1, LON0, LON1, CENTER, cellLat, cellLon;
+let followMode = true;   // true = peta ikut GPS, false = user lagi lihat manual
+
+// isi dropdown pilih sales
+(function isiDropdownSales(){
+  const sel = document.getElementById('kodeInput');
+  SALES_LIST.forEach(([kode, nama]) => {
+    const opt = document.createElement('option');
+    opt.value = kode; opt.textContent = nama;
+    sel.appendChild(opt);
+  });
+})();
+
+function toast(msg, ms=2600){
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.style.display = 'block';
+  setTimeout(()=>t.style.display='none', ms);
+}
+
+// ---------- LAYAR 1: masuk ----------
+async function masuk(){
+  const sel = document.getElementById('kodeInput');
+  if(!sel.value){ toast('Pilih nama sales dulu'); return; }
+  kodeSalesman = sel.value;
+  namaSalesman = sel.options[sel.selectedIndex].textContent;
+  document.getElementById('gateScreen').style.display = 'none';
+  document.getElementById('zoneScreen').style.display = 'block';
+  document.getElementById('salesLabel').textContent = namaSalesman;
+  await muatDaftarZona();
+}
+
+// ---------- LAYAR 2: daftar zona assigned ----------
+async function muatDaftarZona(){
+  const body = document.getElementById('zoneListBody');
+  body.innerHTML = '<div class="empty">Memuat…</div>';
+
+  // ambil assign buat sales ini, join manual ke zona_pilot & progress
+  const { data: assigns, error } = await sb
+    .from('assign_pilot')
+    .select('*, zona_pilot(*)')
+    .eq('kode_salesman', kodeSalesman)
+    .eq('status', 'aktif');
+
+  if(error){ body.innerHTML = '<div class="empty">Gagal memuat zona: '+error.message+'</div>'; return; }
+  if(!assigns || assigns.length === 0){
+    body.innerHTML = '<div class="empty">Belum ada zona yang ditugaskan ke kamu. Hubungi BM/koordinator.</div>';
+    return;
+  }
+
+  zonaList = assigns.map(a => a.zona_pilot).filter(Boolean);
+
+  // ambil progress sweep per zona buat isi progress bar di kartu
+  const { data: progress } = await sb
+    .from('grid_progress')
+    .select('key_petak')
+    .eq('kode_salesman', kodeSalesman);
+  const progCount = {};
+  (progress||[]).forEach(p => { progCount[p.key_petak] = (progCount[p.key_petak]||0)+1; });
+
+  body.innerHTML = '';
+  zonaList.forEach(z => {
+    const pct = Math.round(((progCount[z.key_petak]||0)/16)*100);
+    const div = document.createElement('div');
+    div.className = 'zonecard';
+    div.innerHTML = `
+      <div class="top"><span class="name">${z.kecamatan}</span><span class="score">${Math.round(z.peluang_a*100)}%</span></div>
+      <div class="meta">Petak ${z.key_petak} · ${z.kabupaten}</div>
+      <div class="bar"><div style="width:${pct}%"></div></div>
+      <div class="meta" style="margin-top:4px">${pct}% tersisir</div>`;
+    div.onclick = () => bukaZona(z);
+    body.appendChild(div);
+  });
+}
+
+function kembaliKeDaftar(){
+  if(navigator.geolocation && watchId) navigator.geolocation.clearWatch(watchId);
+  document.getElementById('mapScreen').style.display = 'none';
+  document.getElementById('zoneScreen').style.display = 'block';
+  if(map){ map.remove(); map = null; }
+  muatDaftarZona();
+}
+
+// ---------- LAYAR 3: buka peta buat 1 zona ----------
+let watchId = null;
+async function bukaZona(z){
+  zonaAktif = z;
+  document.getElementById('zoneScreen').style.display = 'none';
+  document.getElementById('mapScreen').style.display = 'flex';
+  document.getElementById('zoneTitle').textContent = 'Petak ' + z.key_petak;
+  document.getElementById('zoneSub').textContent = z.kecamatan + ' · skor ' + Math.round(z.peluang_a*100)+'%';
+  document.getElementById('modalZoneLabel').textContent = z.kecamatan + ' · Petak ' + z.key_petak;
+
+  LON0 = z.gx * S; LAT0 = z.gy * S;
+  LON1 = LON0 + S; LAT1 = LAT0 + S;
+  CENTER = { lat:(LAT0+LAT1)/2, lon:(LON0+LON1)/2 };
+  cellLon = (LON1-LON0)/GRID_N; cellLat = (LAT1-LAT0)/GRID_N;
+
+  map = L.map('map', { zoomControl:false, attributionControl:false }).setView([CENTER.lat, CENTER.lon], 16);
+  L.tileLayer('https://{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}', { subdomains:['mt0','mt1','mt2','mt3'], maxZoom:20 }).addTo(map);
+  L.rectangle([[LAT0,LON0],[LAT1,LON1]], { color:'#d4a900', weight:2, fillColor:'#fff3c4', fillOpacity:0.35 }).addTo(map);
+
+  // begitu user manual drag/zoom peta, matiin follow-mode & tampilin tombol re-center
+  followMode = true;
+  document.getElementById('recenterBtn').style.display = 'none';
+  const matikanFollow = () => { followMode = false; document.getElementById('recenterBtn').style.display = 'flex'; };
+  map.on('dragstart', matikanFollow);
+  map.on('zoomstart', matikanFollow);
+
+  cells = [];
+  for(let r=0;r<GRID_N;r++){
+    for(let c=0;c<GRID_N;c++){
+      const clat0=LAT0+r*cellLat, clat1=clat0+cellLat, clon0=LON0+c*cellLon, clon1=clon0+cellLon;
+      const rect = L.rectangle([[clat0,clon0],[clat1,clon1]], { color:'#c7cbc1', weight:1, fillColor:'rgba(136,135,127,0.15)', fillOpacity:0.5, opacity:0 });
+      cells.push({ rect, r, c, visited:false, clat0, clat1, clon0, clon1 });
+    }
+  }
+
+  // muat progress yg udah pernah kesimpen (biar gak keulang kalau app dibuka lagi)
+  const { data: prog } = await sb.from('grid_progress').select('cell_r, cell_c')
+    .eq('key_petak', z.key_petak).eq('kode_salesman', kodeSalesman);
+  (prog||[]).forEach(p => {
+    const cell = cells.find(x=>x.r===p.cell_r && x.c===p.cell_c);
+    if(cell){ cell.visited = true; }
+  });
+
+  lastPos = null; youMarker = null;
+  if('geolocation' in navigator){
+    watchId = navigator.geolocation.watchPosition(
+      pos => onPosition(pos.coords.latitude, pos.coords.longitude),
+      err => { document.getElementById('disttext').textContent = 'GPS tidak aktif / izin ditolak'; },
+      { enableHighAccuracy:true, maximumAge:2000, timeout:8000 }
+    );
+  } else {
+    document.getElementById('disttext').textContent = 'HP ini tidak dukung GPS browser';
+  }
+}
+
+function haversine(lat1,lon1,lat2,lon2){
+  const R=6371000, toRad=d=>d*Math.PI/180;
+  const dLat=toRad(lat2-lat1), dLon=toRad(lon2-lon1);
+  const a=Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+  return 2*R*Math.asin(Math.sqrt(a));
+}
+function bearing(lat1,lon1,lat2,lon2){
+  const toRad=d=>d*Math.PI/180, toDeg=r=>r*180/Math.PI;
+  const y=Math.sin(toRad(lon2-lon1))*Math.cos(toRad(lat2));
+  const x=Math.cos(toRad(lat1))*Math.sin(toRad(lat2)) - Math.sin(toRad(lat1))*Math.cos(toRad(lat2))*Math.cos(toRad(lon2-lon1));
+  return (toDeg(Math.atan2(y,x))+360)%360;
+}
+function insideZone(lat,lon){ return lat>=LAT0 && lat<=LAT1 && lon>=LON0 && lon<=LON1; }
+function cellIndex(lat,lon){
+  const r=Math.floor((lat-LAT0)/cellLat), c=Math.floor((lon-LON0)/cellLon);
+  if(r<0||r>=GRID_N||c<0||c>=GRID_N) return null;
+  return cells.find(x=>x.r===r && x.c===c);
+}
+function arrowIcon(deg){
+  return L.divIcon({ className:'', iconSize:[26,26], iconAnchor:[13,13],
+    html:`<div style="width:26px;height:26px;transform:rotate(${deg}deg);transition:transform 0.5s ease;">
+      <svg viewBox="0 0 24 24" width="26" height="26"><path d="M12 2.5 L20.5 20.5 L12 16.2 L3.5 20.5 Z" fill="#2a5a7a" stroke="#fff" stroke-width="1.6" stroke-linejoin="round"/></svg>
+    </div>` });
+}
+
+const navcard = () => document.getElementById('navcard');
+const sweepcard = () => document.getElementById('sweepcard');
+const fab = () => document.getElementById('fab');
+
+async function onPosition(lat, lon){
+  const brg = lastPos ? bearing(lastPos.lat, lastPos.lon, lat, lon) : bearing(lat, lon, CENTER.lat, CENTER.lon);
+  lastPos = { lat, lon };
+  if(!youMarker){ youMarker = L.marker([lat,lon], { icon: arrowIcon(brg) }).addTo(map); }
+  else { youMarker.setLatLng([lat,lon]); youMarker.setIcon(arrowIcon(brg)); }
+  if(followMode){ map.panTo([lat,lon], { animate:true }); }
+
+  const inside = insideZone(lat, lon);
+  if(!inside){
+    navcard().style.display='flex'; sweepcard().style.display='none'; fab().style.display='none';
+    const d = Math.round(haversine(lat,lon, CENTER.lat, CENTER.lon));
+    document.getElementById('disttext').textContent = d>=1000 ? (d/1000).toFixed(1)+' km' : d+' m';
+    cells.forEach(x=>x.rect.setStyle({opacity:0}));
+  } else {
+    navcard().style.display='none'; sweepcard().style.display='flex'; fab().style.display='flex';
+    cells.forEach(x=>{ if(!x.rect._map) x.rect.addTo(map); x.rect.setStyle({opacity:1}); if(x.visited) x.rect.setStyle({fillColor:'#639922', fillOpacity:0.42, color:'#3b6d11'}); });
+    const cell = cellIndex(lat, lon);
+    if(cell && !cell.visited){
+      cell.visited = true;
+      cell.rect.setStyle({ fillColor:'#639922', fillOpacity:0.42, color:'#3b6d11' });
+      // simpan ke Supabase — kalau gagal (misal sinyal jelek), gak ngeblok UI
+      sb.from('grid_progress').insert({
+        key_petak: zonaAktif.key_petak, kode_salesman: kodeSalesman,
+        cell_r: cell.r, cell_c: cell.c, lat, lon
+      }).then(({error})=>{ if(error) console.warn('gagal simpan progress:', error.message); });
+    }
+    const visited = cells.filter(x=>x.visited).length;
+    document.getElementById('progfill').style.width = Math.round(visited/cells.length*100)+'%';
+    document.getElementById('proglabel').textContent = visited+' / '+cells.length+' kotak';
+  }
+}
+
+// ---------- modal submit temuan ----------
+let foundVal = null, photoFile = null;
+function pickFound(btn){
+  document.querySelectorAll('.radiorow .opt').forEach(b=>b.classList.remove('on'));
+  btn.classList.add('on'); foundVal = btn.dataset.val;
+}
+function onPhoto(input){
+  photoFile = input.files && input.files[0] ? input.files[0] : null;
+  const pb = document.getElementById('photobtn');
+  pb.textContent = photoFile ? '✓ Foto terlampir — tap buat ganti' : 'Tap untuk buka kamera';
+  pb.classList.toggle('filled', !!photoFile);
+  document.getElementById('submitBtn').disabled = !photoFile;
+}
+fab().onclick;
+document.addEventListener('click', e => { if(e.target && e.target.id==='fab'){ document.getElementById('modalBackdrop').style.display='flex'; } });
+document.getElementById('recenterBtn').addEventListener('click', () => {
+  followMode = true;
+  document.getElementById('recenterBtn').style.display = 'none';
+  if(lastPos){ map.panTo([lastPos.lat, lastPos.lon], { animate:true }); }
+});
+function closeModal(){ document.getElementById('modalBackdrop').style.display='none'; }
+
+async function submitTemuan(){
+  const btn = document.getElementById('submitBtn');
+  btn.disabled = true; btn.textContent = 'Menyimpan…';
+  try{
+    const filename = `${zonaAktif.key_petak}_${kodeSalesman}_${Date.now()}.jpg`.replace(/[^a-zA-Z0-9._-]/g,'_');
+    const { error: upErr } = await sb.storage.from('temuan-foto').upload(filename, photoFile);
+    if(upErr) throw upErr;
+    const { data: pub } = sb.storage.from('temuan-foto').getPublicUrl(filename);
+
+    const { error: insErr } = await sb.from('temuan_pilot').insert({
+      key_petak: zonaAktif.key_petak, kode_salesman: kodeSalesman,
+      lat: lastPos ? lastPos.lat : null, lon: lastPos ? lastPos.lon : null,
+      ditemukan_grosir: foundVal || 'belum_dicek',
+      jumlah_toko_baru: parseInt(document.getElementById('jmlToko').value||'0'),
+      foto_url: pub.publicUrl,
+      catatan: document.getElementById('catatan').value || null
+    });
+    if(insErr) throw insErr;
+
+    closeModal();
+    toast('Temuan tersimpan');
+  } catch(e){
+    toast('Gagal simpan: ' + e.message, 4000);
+  } finally {
+    btn.disabled = false; btn.textContent = 'Simpan temuan';
+  }
+}
+</script>
+</body>
+</html>
